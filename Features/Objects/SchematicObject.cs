@@ -1,7 +1,9 @@
 using AdminToys;
+using LabApi.Features.Wrappers;
 using Mirror;
 using ProjectMER.Events.Handlers;
 using ProjectMER.Features.Enums;
+using ProjectMER.Features.Extensions;
 using ProjectMER.Features.Serializable.Schematics;
 using UnityEngine;
 using Utf8Json;
@@ -125,6 +127,11 @@ public class SchematicObject : MonoBehaviour
 
 	public AnimationController AnimationController => AnimationController.Get(this);
 
+	/// <summary>
+	/// Gets the players that can see this schematic. <see langword="null"/> means everyone can see it.
+	/// </summary>
+	public IReadOnlyCollection<Player>? VisiblePlayers => _visiblePlayers;
+
 	public SchematicObject Init(SchematicObjectDataList data)
 	{
 		Name = Path.GetFileNameWithoutExtension(data.Path);
@@ -246,15 +253,69 @@ public class SchematicObject : MonoBehaviour
 
 	public void Destroy() => Destroy(gameObject);
 
+	internal void ApplyPlayerVisibility(IEnumerable<Player>? visiblePlayers)
+	{
+		if (visiblePlayers == null)
+			return;
+
+		_visiblePlayers = [];
+		foreach (Player player in visiblePlayers)
+		{
+			if (player != null)
+				_visiblePlayers.Add(player);
+		}
+
+		RestrictedVisibilitySchematics.Add(this);
+
+		foreach (NetworkIdentity networkIdentity in GetComponentsInChildren<NetworkIdentity>(true))
+		{
+			networkIdentity.visible = Visibility.ForceHidden;
+			NetworkServer.RebuildObservers(networkIdentity, false);
+		}
+
+		foreach (Player player in Player.List)
+		{
+			if (player.Connection == null)
+				continue;
+
+			if (CanBeSeenBy(player))
+				player.SpawnSchematic(this);
+		}
+	}
+
+	internal bool CanBeSeenBy(Player player)
+	{
+		if (_visiblePlayers == null)
+			return true;
+
+		if (player == null)
+			return false;
+
+		foreach (Player visiblePlayer in _visiblePlayers)
+		{
+			if (visiblePlayer == player)
+				return true;
+
+			if (visiblePlayer != null && visiblePlayer.UserId != null && visiblePlayer.UserId == player.UserId)
+				return true;
+		}
+
+		return false;
+	}
+
 	private void OnDestroy()
 	{
+		RestrictedVisibilitySchematics.Remove(this);
 		AnimationController.Dictionary.Remove(this);
 		NetworkServer.Destroy(gameObject);
 		Schematic.OnSchematicDestroyed(new(this, Name));
 	}
 
+	internal static readonly HashSet<SchematicObject> RestrictedVisibilitySchematics = [];
+
 	internal Dictionary<int, Transform> ObjectFromId = [];
 
+	private HashSet<Player>? _visiblePlayers;
 	private readonly List<GameObject> _attachedBlocks = [];
 	private readonly List<NetworkIdentity> _networkIdentities = [];
 	private readonly List<AdminToyBase> _adminToyBases = [];
