@@ -1,5 +1,6 @@
 using AdminToys;
 using LabApi.Features.Wrappers;
+using MEC;
 using Mirror;
 using ProjectMER.Events.Handlers;
 using ProjectMER.Features.Enums;
@@ -266,20 +267,47 @@ public class SchematicObject : MonoBehaviour
 		}
 
 		RestrictedVisibilitySchematics.Add(this);
+		SetForceHidden();
+
+		// Spawn messages are sent in the same frame as NetworkServer.Spawn.
+		// Hide after they flush, otherwise every client keeps the original spawn.
+		Timing.CallDelayed(0.1f, ApplyVisibilityToPlayers);
+		Timing.CallDelayed(0.5f, ApplyVisibilityToPlayers);
+	}
+
+	internal void ApplyVisibilityToPlayers()
+	{
+		if (this == null)
+			return;
+
+		SetForceHidden();
 
 		foreach (NetworkIdentity networkIdentity in GetComponentsInChildren<NetworkIdentity>(true))
 		{
-			networkIdentity.visible = Visibility.ForceHidden;
-			NetworkServer.RebuildObservers(networkIdentity, false);
-		}
-
-		foreach (Player player in Player.List)
-		{
-			if (player.Connection == null)
+			if (networkIdentity == null)
 				continue;
 
-			if (CanBeSeenBy(player))
-				player.SpawnSchematic(this);
+			foreach (Player player in Player.List)
+			{
+				if (player?.Connection == null)
+					continue;
+
+				if (CanBeSeenBy(player))
+					player.SpawnNetworkIdentity(networkIdentity);
+				else
+					player.DestroyNetworkIdentity(networkIdentity);
+			}
+		}
+	}
+
+	private void SetForceHidden()
+	{
+		foreach (NetworkIdentity networkIdentity in GetComponentsInChildren<NetworkIdentity>(true))
+		{
+			if (networkIdentity == null)
+				continue;
+
+			networkIdentity.visible = Visibility.ForceHidden;
 		}
 	}
 

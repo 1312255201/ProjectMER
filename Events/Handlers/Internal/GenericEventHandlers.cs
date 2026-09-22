@@ -26,21 +26,25 @@ public class GenericEventsHandler : CustomEventsHandler
 
 	public override void OnPlayerJoined(PlayerJoinedEventArgs ev)
 	{
-		Timing.CallDelayed(0.5f, () =>
+		Timing.CallDelayed(0.5f, () => ApplyRestrictedVisibility(ev.Player));
+		Timing.CallDelayed(1f, () => ApplyRestrictedVisibility(ev.Player));
+	}
+
+	private static void ApplyRestrictedVisibility(Player player)
+	{
+		if (player == null || !player.IsOnline || player.Connection == null)
+			return;
+
+		foreach (SchematicObject schematic in SchematicObject.RestrictedVisibilitySchematics.ToArray())
 		{
-			Player player = ev.Player;
-			if (player == null || !player.IsOnline || player.Connection == null)
-				return;
+			if (schematic == null)
+				continue;
 
-			foreach (SchematicObject schematic in SchematicObject.RestrictedVisibilitySchematics.ToArray())
-			{
-				if (schematic == null)
-					continue;
-
-				if (schematic.CanBeSeenBy(player))
-					player.SpawnSchematic(schematic);
-			}
-		});
+			if (schematic.CanBeSeenBy(player))
+				player.SpawnSchematic(schematic);
+			else
+				player.DestroySchematic(schematic);
+		}
 	}
 
 	public override void OnPlayerSpawning(PlayerSpawningEventArgs ev)

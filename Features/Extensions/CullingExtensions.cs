@@ -24,7 +24,10 @@ public static class CullingExtensions
 	/// <param name="schematic">The schematic to spawn.</param>
 	public static void SpawnSchematic(this Player player, SchematicObject schematic)
 	{
-		foreach (NetworkIdentity networkIdentity in schematic.NetworkIdentities)
+		if (player?.Connection == null || schematic == null)
+			return;
+
+		foreach (NetworkIdentity networkIdentity in schematic.GetComponentsInChildren<NetworkIdentity>(true))
 			player.SpawnNetworkIdentity(networkIdentity);
 	}
 
@@ -35,7 +38,10 @@ public static class CullingExtensions
 	/// <param name="schematic">The schematic to destroy.</param>
 	public static void DestroySchematic(this Player player, SchematicObject schematic)
 	{
-		foreach (NetworkIdentity networkIdentity in schematic.NetworkIdentities)
+		if (player?.Connection == null || schematic == null)
+			return;
+
+		foreach (NetworkIdentity networkIdentity in schematic.GetComponentsInChildren<NetworkIdentity>(true))
 			player.DestroyNetworkIdentity(networkIdentity);
 	}
 
@@ -44,14 +50,24 @@ public static class CullingExtensions
 	/// </summary>
 	/// <param name="player">The target.</param>
 	/// <param name="networkIdentity">The network identity to spawn.</param>
-	public static void SpawnNetworkIdentity(this Player player, NetworkIdentity networkIdentity) =>
+	public static void SpawnNetworkIdentity(this Player player, NetworkIdentity networkIdentity)
+	{
+		if (player?.Connection == null || networkIdentity == null || SendSpawnMessage == null)
+			return;
+
 		SendSpawnMessage.Invoke(null, [networkIdentity, player.Connection]);
+	}
 
 	/// <summary>
 	/// Destroys the given <paramref name="networkIdentity"/> for the specified <paramref name="player"/>.
 	/// </summary>
 	/// <param name="player">The target.</param>
 	/// <param name="networkIdentity">The network identity to destroy.</param>
-	public static void DestroyNetworkIdentity(this Player player, NetworkIdentity networkIdentity) =>
+	public static void DestroyNetworkIdentity(this Player player, NetworkIdentity networkIdentity)
+	{
+		if (player?.Connection == null || networkIdentity == null)
+			return;
+
 		player.Connection.Send(new ObjectDestroyMessage { netId = networkIdentity.netId });
+	}
 }
