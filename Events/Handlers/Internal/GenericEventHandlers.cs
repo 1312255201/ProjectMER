@@ -3,7 +3,6 @@ using LabApi.Events.CustomHandlers;
 using LabApi.Features.Wrappers;
 using MEC;
 using ProjectMER.Features;
-using ProjectMER.Features.Extensions;
 using ProjectMER.Features.Objects;
 using ProjectMER.Features.Serializable;
 using ProjectMER.Features.ToolGun;
@@ -22,29 +21,6 @@ public class GenericEventsHandler : CustomEventsHandler
 		PickupEventsHandler.ButtonPickups.Clear();
 		PickupEventsHandler.PickupUsesLeft.Clear();
 		SchematicObject.RestrictedVisibilitySchematics.Clear();
-	}
-
-	public override void OnPlayerJoined(PlayerJoinedEventArgs ev)
-	{
-		Timing.CallDelayed(0.5f, () => ApplyRestrictedVisibility(ev.Player));
-		Timing.CallDelayed(1f, () => ApplyRestrictedVisibility(ev.Player));
-	}
-
-	private static void ApplyRestrictedVisibility(Player player)
-	{
-		if (player == null || !player.IsOnline || player.Connection == null)
-			return;
-
-		foreach (SchematicObject schematic in SchematicObject.RestrictedVisibilitySchematics.ToArray())
-		{
-			if (schematic == null)
-				continue;
-
-			if (schematic.CanBeSeenBy(player))
-				player.SpawnSchematic(schematic);
-			else
-				player.DestroySchematic(schematic);
-		}
 	}
 
 	public override void OnPlayerSpawning(PlayerSpawningEventArgs ev)

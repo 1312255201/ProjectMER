@@ -1,6 +1,6 @@
 using AdminToys;
+using System.Reflection;
 using LabApi.Features.Wrappers;
-using MEC;
 using Mirror;
 using ProjectMER.Events.Handlers;
 using ProjectMER.Features.Enums;
@@ -147,6 +147,7 @@ public class SchematicObject : MonoBehaviour
 
 		AddRigidbodies();
 		AddAnimators();
+		HideFromDisallowedPlayers();
 
 		Schematic.OnSchematicSpawned(new(this, Name));
 
@@ -217,7 +218,13 @@ public class SchematicObject : MonoBehaviour
 		{
 			isAnimated = true;
 			foreach (KeyValuePair<GameObject, RuntimeAnimatorController> pair in _animators)
-				pair.Key.AddComponent<Animator>().runtimeAnimatorController = pair.Value;
+			{
+				Animator animator = pair.Key.AddComponent<Animator>();
+				animator.runtimeAnimatorController = pair.Value;
+				animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+				if (pair.Key.TryGetComponent(out AdminToyBase adminToyBase))
+					adminToyBase.NetworkIsStatic = false;
+			}
 		}
 
 		_animators.Clear();
@@ -254,9 +261,11 @@ public class SchematicObject : MonoBehaviour
 
 	public void Destroy() => Destroy(gameObject);
 
-	internal void ApplyPlayerVisibility(IEnumerable<Player>? visiblePlayers)
+	internal static HashSet<Player>? PendingVisiblePlayers;
+
+	internal void AssignVisiblePlayers(IEnumerable<Player>? visiblePlayers)
 	{
-		if (visiblePlayers == null)
+		if (visiblePlayers == null || _visiblePlayers != null)
 			return;
 
 		_visiblePlayers = [];
@@ -267,68 +276,58 @@ public class SchematicObject : MonoBehaviour
 		}
 
 		RestrictedVisibilitySchematics.Add(this);
-		SetForceHidden();
-
-		// Spawn messages are sent in the same frame as NetworkServer.Spawn.
-		// Hide after they flush, otherwise every client keeps the original spawn.
-		Timing.CallDelayed(0.1f, ApplyVisibilityToPlayers);
-		Timing.CallDelayed(0.5f, ApplyVisibilityToPlayers);
 	}
 
-	internal void ApplyVisibilityToPlayers()
-	{
-		if (this == null)
-			return;
-
-		SetForceHidden();
-
-		foreach (NetworkIdentity networkIdentity in GetComponentsInChildren<NetworkIdentity>(true))
-		{
-			if (networkIdentity == null)
-				continue;
-
-			foreach (Player player in Player.List)
-			{
-				if (player?.Connection == null)
-					continue;
-
-				if (CanBeSeenBy(player))
-					player.SpawnNetworkIdentity(networkIdentity);
-				else
-					player.DestroyNetworkIdentity(networkIdentity);
-			}
-		}
-	}
-
-	private void SetForceHidden()
-	{
-		foreach (NetworkIdentity networkIdentity in GetComponentsInChildren<NetworkIdentity>(true))
-		{
-			if (networkIdentity == null)
-				continue;
-
-			networkIdentity.visible = Visibility.ForceHidden;
-		}
-	}
-
-	internal bool CanBeSeenBy(Player player)
+	internal bool Allows(NetworkConnection connection)
 	{
 		if (_visiblePlayers == null)
 			return true;
 
-		if (player == null)
+		if (connection == null)
 			return false;
 
-		foreach (Player visiblePlayer in _visiblePlayers)
+		int connectionId = connection.connectionId;
+		foreach (Player allowed in _visiblePlayers)
 		{
-			if (visiblePlayer == player)
+			if (allowed == null)
+				continue;
+
+			if (allowed.ConnectionToClient != null && allowed.ConnectionToClient.connectionId == connectionId)
 				return true;
 
-			if (visiblePlayer != null && visiblePlayer.UserId != null && visiblePlayer.UserId == player.UserId)
+			if (allowed.Connection != null && allowed.Connection.connectionId == connectionId)
 				return true;
 		}
 
 		return false;
+	}
+
+	internal void HideFromDisallowedPlayers()
+	{
+		if (_visiblePlayers == null)
+			return;
+
+		foreach (NetworkIdentity identity in GetComponentsInChildren<NetworkIdentity>(true))
+		{
+			if (identity == null || identity.netId == 0 || identity.observers == null || identity.observers.Count == 0)
+				continue;
+
+			List<NetworkConnectionToClient> denied = [];
+			foreach (NetworkConnectionToClient connection in identity.observers.Values)
+			{
+				if (connection != null && !Allows(connection))
+					denied.Add(connection);
+			}
+
+			if (denied.Count == 0)
+				continue;
+
+			foreach (NetworkConnectionToClient connection in denied)
+			{
+				RemoveFromObserving?.Invoke(connection, [identity, false]);
+				identity.observers.Remove(connection.connectionId);
+			}
+		}
 	}
 
 	private void OnDestroy()
@@ -340,6 +339,13 @@ public class SchematicObject : MonoBehaviour
 	}
 
 	internal static readonly HashSet<SchematicObject> RestrictedVisibilitySchematics = [];
+
+	private static readonly MethodInfo? RemoveFromObserving = typeof(NetworkConnectionToClient).GetMethod(
+		"RemoveFromObserving",
+		BindingFlags.Instance | BindingFlags.NonPublic,
+		null,
+		[typeof(NetworkIdentity), typeof(bool)],
+		null);
 
 	internal Dictionary<int, Transform> ObjectFromId = [];
 

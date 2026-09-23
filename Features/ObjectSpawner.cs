@@ -18,13 +18,30 @@ public static class ObjectSpawner
 
 	public static SchematicObject SpawnSchematic(SerializableSchematic serializableSchematic, IEnumerable<Player>? visiblePlayers = null)
 	{
-		GameObject? gameObject = serializableSchematic.SpawnOrUpdateObject();
-		if (gameObject == null)
-			return null!;
+		HashSet<Player>? pending = null;
+		if (visiblePlayers != null)
+		{
+			pending = [];
+			foreach (Player player in visiblePlayers)
+			{
+				if (player != null)
+					pending.Add(player);
+			}
+		}
 
-		SchematicObject schematic = gameObject.GetComponent<SchematicObject>();
-		schematic.ApplyPlayerVisibility(visiblePlayers);
-		return schematic;
+		SchematicObject.PendingVisiblePlayers = pending;
+		try
+		{
+			GameObject? gameObject = serializableSchematic.SpawnOrUpdateObject();
+			if (gameObject == null)
+				return null!;
+
+			return gameObject.GetComponent<SchematicObject>();
+		}
+		finally
+		{
+			SchematicObject.PendingVisiblePlayers = null;
+		}
 	}
 
 	public static SchematicObject SpawnSchematic(SerializableSchematic serializableSchematic, Player? visiblePlayer) =>

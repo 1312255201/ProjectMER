@@ -48,8 +48,10 @@ public class SerializableSchematic : SerializableObject
 				return null;
 			}
 			
+			SchematicObject schematicObject = schematic.gameObject.AddComponent<SchematicObject>();
+			schematicObject.AssignVisiblePlayers(SchematicObject.PendingVisiblePlayers);
 			NetworkServer.Spawn(schematic.gameObject);
-			schematic.gameObject.AddComponent<SchematicObject>().Init(data);
+			schematicObject.Init(data);
 		}
 
 		return schematic.gameObject;

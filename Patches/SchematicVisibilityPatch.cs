@@ -1,5 +1,4 @@
 using HarmonyLib;
-using LabApi.Features.Wrappers;
 using Mirror;
 using ProjectMER.Features.Objects;
 
@@ -10,45 +9,50 @@ public static class SchematicVisibilityCheckObserverPatch
 {
 	public static void Postfix(NetworkIdentity identity, NetworkConnectionToClient newObserver, ref bool __result)
 	{
-		if (!__result || !TryGetRestrictedSchematic(identity, out SchematicObject schematic))
+		if (!__result || !TryGet(identity, out SchematicObject schematic))
 			return;
 
-		Player? player = GetPlayer(newObserver);
-		if (player == null || !schematic.CanBeSeenBy(player))
+		if (!schematic.Allows(newObserver))
 			__result = false;
 	}
 
-	internal static bool TryGetRestrictedSchematic(NetworkIdentity identity, out SchematicObject schematic)
+	internal static bool TryGet(NetworkIdentity identity, out SchematicObject schematic)
 	{
 		schematic = null!;
 		if (identity == null || SchematicObject.RestrictedVisibilitySchematics.Count == 0)
 			return false;
 
-		schematic = identity.GetComponentInParent<SchematicObject>();
+		try
+		{
+			schematic = identity.GetComponentInParent<SchematicObject>();
+		}
+		catch
+		{
+			return false;
+		}
+
 		return schematic != null && schematic.VisiblePlayers != null;
-	}
-
-	internal static Player? GetPlayer(NetworkConnectionToClient connection)
-	{
-		if (connection?.identity == null)
-			return null;
-
-		return Player.Get(connection.identity);
 	}
 }
 
 [HarmonyPatch(typeof(CustomInterestManagement), nameof(CustomInterestManagement.OnRebuildObservers))]
 public static class SchematicVisibilityRebuildObserversPatch
 {
-	public static void Postfix(NetworkIdentity identity, HashSet<NetworkConnectionToClient> newObservers)
+	public static bool Prefix(NetworkIdentity identity, HashSet<NetworkConnectionToClient> newObservers)
 	{
-		if (!SchematicVisibilityCheckObserverPatch.TryGetRestrictedSchematic(identity, out SchematicObject schematic))
-			return;
+		if (newObservers == null || !SchematicVisibilityCheckObserverPatch.TryGet(identity, out SchematicObject schematic))
+			return true;
 
-		newObservers.RemoveWhere(connection =>
+		foreach (NetworkConnectionToClient connection in NetworkServer.connections.Values)
 		{
-			Player? player = SchematicVisibilityCheckObserverPatch.GetPlayer(connection);
-			return player == null || !schematic.CanBeSeenBy(player);
-		});
+			if (connection != null && connection.isReady && schematic.Allows(connection))
+				newObservers.Add(connection);
+		}
+
+		NetworkConnectionToClient? localConnection = NetworkServer.localConnection;
+		if (localConnection != null && schematic.Allows(localConnection))
+			newObservers.Add(localConnection);
+
+		return false;
 	}
 }

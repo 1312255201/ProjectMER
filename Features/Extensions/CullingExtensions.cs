@@ -52,7 +52,7 @@ public static class CullingExtensions
 	/// <param name="networkIdentity">The network identity to spawn.</param>
 	public static void SpawnNetworkIdentity(this Player player, NetworkIdentity networkIdentity)
 	{
-		if (player?.Connection == null || networkIdentity == null || SendSpawnMessage == null)
+		if (player?.Connection == null || networkIdentity == null || networkIdentity.netId == 0 || SendSpawnMessage == null)
 			return;
 
 		SendSpawnMessage.Invoke(null, [networkIdentity, player.Connection]);
@@ -65,7 +65,7 @@ public static class CullingExtensions
 	/// <param name="networkIdentity">The network identity to destroy.</param>
 	public static void DestroyNetworkIdentity(this Player player, NetworkIdentity networkIdentity)
 	{
-		if (player?.Connection == null || networkIdentity == null)
+		if (player?.Connection == null || networkIdentity == null || networkIdentity.netId == 0)
 			return;
 
 		player.Connection.Send(new ObjectDestroyMessage { netId = networkIdentity.netId });
