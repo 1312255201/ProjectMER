@@ -28,6 +28,8 @@ Once your plugin loads, it will create a directory at `LabAPI/configs/ProjectMER
 
 **More support can be found on a [Discord](https://discord.gg/JwAfeSd79u) server**
 
+Compared to the original version, additional features have been added
+
 # Schematic visibility API
 
 Use the `SchematicObject` returned by `ObjectSpawner` to manage visibility and
