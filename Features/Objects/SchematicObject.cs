@@ -6,6 +6,7 @@ using ProjectMER.Events.Handlers;
 using ProjectMER.Features.Enums;
 using ProjectMER.Features.Extensions;
 using ProjectMER.Features.Serializable.Schematics;
+using ProjectMER.Patches;
 using UnityEngine;
 using Utf8Json;
 using Utils.NonAllocLINQ;
@@ -133,6 +134,87 @@ public class SchematicObject : MonoBehaviour
 	/// </summary>
 	public IReadOnlyCollection<Player>? VisiblePlayers => _visiblePlayers;
 
+	/// <summary>The player currently being followed, or null if following has stopped.</summary>
+	public Player? FollowedPlayer => _followedPlayer;
+
+	/// <summary>Follows a player while preserving the current world position, rotation and scale.</summary>
+	public void FollowPlayer(Player player)
+	{
+		Transform target = GetFollowTarget(player);
+		FollowPlayer(player, target.InverseTransformPoint(transform.position), Quaternion.Inverse(target.rotation) * transform.rotation);
+	}
+
+	/// <summary>Follows a player at the specified player-local position and rotation, preserving world scale.</summary>
+	public void FollowPlayer(Player player, Vector3 localPosition, Quaternion localRotation)
+	{
+		Transform target = GetFollowTarget(player);
+		Vector3 targetScale = target.lossyScale;
+		if (Mathf.Approximately(targetScale.x, 0f) || Mathf.Approximately(targetScale.y, 0f) || Mathf.Approximately(targetScale.z, 0f))
+			throw new InvalidOperationException("Cannot follow a player with zero scale.");
+
+		NetworkIdentity[] identities = GetComponentsInChildren<NetworkIdentity>(true);
+		foreach (NetworkIdentity identity in identities)
+		{
+			if (identity == null || !identity.TryGetComponent(out AdminToyBase _) ||
+				(identity.transform != transform && (identity.transform.parent == null || !identity.transform.parent.TryGetComponent(out NetworkIdentity _))))
+				throw new NotSupportedException("Following requires admin toy blocks with networked parents; pickups and workstations are not supported.");
+		}
+		if (!TryGetComponent(out AdminToyBase rootToy))
+			throw new NotSupportedException("The schematic root must be an admin toy.");
+
+		Vector3 worldScale = transform.lossyScale;
+		transform.SetParent(null, true);
+		_followScale = new Vector3(worldScale.x / targetScale.x, worldScale.y / targetScale.y, worldScale.z / targetScale.z);
+		_followLocalPosition = localPosition;
+		_followLocalRotation = localRotation;
+		_followedPlayer = player;
+		_followTarget = target;
+		rootToy.NetworkIsStatic = false;
+		UpdateFollowTransform();
+	}
+
+	/// <summary>Stops following and leaves the schematic at its current world transform.</summary>
+	public void StopFollowing()
+	{
+		_followedPlayer = null;
+		_followTarget = null;
+	}
+
+	private static Transform GetFollowTarget(Player player)
+	{
+		if (player == null)
+			throw new ArgumentNullException(nameof(player));
+		if (!player.IsOnline || player.GameObject == null)
+			throw new InvalidOperationException("The player must be online to follow them.");
+		return player.GameObject.transform;
+	}
+
+	private void LateUpdate()
+	{
+		if (_followedPlayer == null)
+			return;
+		if (!_followedPlayer.IsOnline || _followTarget == null)
+		{
+			StopFollowing();
+			return;
+		}
+		UpdateFollowTransform();
+	}
+
+	private void UpdateFollowTransform()
+	{
+		if (_followTarget == null)
+			return;
+		transform.SetPositionAndRotation(_followTarget.TransformPoint(_followLocalPosition), _followTarget.rotation * _followLocalRotation);
+		transform.localScale = Vector3.Scale(_followTarget.lossyScale, _followScale);
+		if (TryGetComponent(out AdminToyBase rootToy))
+		{
+			rootToy.NetworkPosition = transform.localPosition;
+			rootToy.NetworkRotation = transform.localRotation;
+			rootToy.NetworkScale = transform.localScale;
+		}
+	}
+
 	public SchematicObject Init(SchematicObjectDataList data)
 	{
 		Name = Path.GetFileNameWithoutExtension(data.Path);
@@ -259,7 +341,82 @@ public class SchematicObject : MonoBehaviour
 	}
 
 
-	public void Destroy() => Destroy(gameObject);
+	/// <summary>Destroys the schematic and all of its independently spawned network objects.</summary>
+	public void Destroy()
+	{
+		if (_destroying)
+			return;
+
+		_destroying = true;
+		DestroyNetworkChildren();
+		NetworkServer.Destroy(gameObject);
+	}
+
+	/// <summary>Replaces the visibility list; null makes the schematic visible to everyone.</summary>
+	public void SetVisiblePlayers(IEnumerable<Player>? players)
+	{
+		HashSet<Player>? updated = players == null ? null : new HashSet<Player>(players.Where(player => player != null));
+		_visiblePlayers = updated;
+		if (updated == null)
+			RestrictedVisibilitySchematics.Remove(this);
+		else
+			RestrictedVisibilitySchematics.Add(this);
+		RebuildVisibility();
+	}
+
+	/// <summary>Adds a player to a restricted visibility list. Returns false if already present.</summary>
+	public bool AddVisiblePlayer(Player player)
+	{
+		if (player == null)
+			throw new ArgumentNullException(nameof(player));
+		if (_visiblePlayers == null)
+			throw new InvalidOperationException("Set a restricted visibility list before adding players.");
+		if (!_visiblePlayers.Add(player))
+			return false;
+		RebuildVisibility();
+		return true;
+	}
+
+	/// <summary>Removes a player from a restricted visibility list. Returns false if absent.</summary>
+	public bool RemoveVisiblePlayer(Player player)
+	{
+		if (player == null)
+			throw new ArgumentNullException(nameof(player));
+		if (_visiblePlayers == null)
+			throw new InvalidOperationException("Set a restricted visibility list before removing players.");
+		if (!_visiblePlayers.Remove(player))
+			return false;
+		RebuildVisibility();
+		return true;
+	}
+
+	private void RebuildVisibility()
+	{
+		NetworkIdentity[] identities = GetComponentsInChildren<NetworkIdentity>(true);
+		// Hide children before their parents, and spawn parents before children.
+		for (int i = identities.Length - 1; i >= 0; i--)
+		{
+			NetworkIdentity identity = identities[i];
+			if (identity != null && identity.netId != 0)
+				SchematicRebuildObserversPatch.Refresh(identity, this, add: false);
+		}
+		foreach (NetworkIdentity identity in identities)
+		{
+			if (identity != null && identity.netId != 0)
+				SchematicRebuildObserversPatch.Refresh(identity, this, remove: false);
+		}
+	}
+
+	private void DestroyNetworkChildren()
+	{
+		NetworkIdentity[] identities = GetComponentsInChildren<NetworkIdentity>(true);
+		for (int i = identities.Length - 1; i >= 0; i--)
+		{
+			NetworkIdentity identity = identities[i];
+			if (identity != null && identity.gameObject != gameObject && identity.netId != 0)
+				NetworkServer.Destroy(identity.gameObject);
+		}
+	}
 
 	internal static HashSet<Player>? PendingVisiblePlayers;
 
@@ -332,9 +489,14 @@ public class SchematicObject : MonoBehaviour
 
 	private void OnDestroy()
 	{
+		if (!_destroying)
+		{
+			_destroying = true;
+			DestroyNetworkChildren();
+			NetworkServer.Destroy(gameObject);
+		}
 		RestrictedVisibilitySchematics.Remove(this);
 		AnimationController.Dictionary.Remove(this);
-		NetworkServer.Destroy(gameObject);
 		Schematic.OnSchematicDestroyed(new(this, Name));
 	}
 
@@ -350,6 +512,12 @@ public class SchematicObject : MonoBehaviour
 	internal Dictionary<int, Transform> ObjectFromId = [];
 
 	private HashSet<Player>? _visiblePlayers;
+	private Player? _followedPlayer;
+	private Transform? _followTarget;
+	private Vector3 _followLocalPosition;
+	private Quaternion _followLocalRotation;
+	private Vector3 _followScale;
+	private bool _destroying;
 	private readonly List<GameObject> _attachedBlocks = [];
 	private readonly List<NetworkIdentity> _networkIdentities = [];
 	private readonly List<AdminToyBase> _adminToyBases = [];

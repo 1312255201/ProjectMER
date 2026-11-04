@@ -1,5 +1,4 @@
-﻿using CommandSystem;
-using LabApi.Features.Permissions;
+using CommandSystem;
 using LabApi.Features.Wrappers;
 using ProjectMER.Commands.Modifying.Scale.SubCommands;
 
@@ -31,9 +30,9 @@ public class Scale : ParentCommand
 	/// <inheritdoc/>
 	protected override bool ExecuteParent(ArraySegment<string> arguments, ICommandSender sender, out string response)
 	{
-		if (!sender.HasAnyPermission($"mpr.{Command}"))
+		if (!CommandAccess.IsRemoteAdmin(sender))
 		{
-			response = $"You don't have permission to execute this command. Required permission: mpr.{Command}";
+			response = "Remote Admin access is required.";
 			return false;
 		}
 

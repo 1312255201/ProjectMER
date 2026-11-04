@@ -1,6 +1,5 @@
 using System.Text;
 using CommandSystem;
-using LabApi.Features.Permissions;
 using NorthwoodLib.Pools;
 using ProjectMER.Commands.Map;
 using ProjectMER.Commands.Modifying;
@@ -35,6 +34,7 @@ public class MapEditorParentCommand : ParentCommand
 		RegisterCommand(new List());
 		RegisterCommand(new Indicators());
 		RegisterCommand(new Merge());
+		RegisterCommand(new VisibilityTest());
 
 		RegisterCommand(new Position());
 		RegisterCommand(new Rotation());
@@ -48,16 +48,19 @@ public class MapEditorParentCommand : ParentCommand
 
 	protected override bool ExecuteParent(ArraySegment<string> arguments, ICommandSender sender, out string response)
 	{
+		if (!CommandAccess.IsRemoteAdmin(sender))
+		{
+			response = "Remote Admin access is required.";
+			return false;
+		}
+
 		StringBuilder sb = StringBuilderPool.Shared.Rent();
 		sb.AppendLine();
 		sb.Append("Please enter a valid subcommand:");
 
 		foreach (ICommand command in AllCommands)
 		{
-			if (sender.HasAnyPermission($"mpr.{command.Command}"))
-			{
-				sb.Append($"\n\n<color=yellow><b>- {command.Command} ({string.Join(", ", command.Aliases)})</b></color>\n<color=white>{command.Description}</color>");
-			}
+			sb.Append($"\n\n<color=yellow><b>- {command.Command} ({string.Join(", ", command.Aliases)})</b></color>\n<color=white>{command.Description}</color>");
 		}
 
 		response = StringBuilderPool.Shared.ToStringReturn(sb);

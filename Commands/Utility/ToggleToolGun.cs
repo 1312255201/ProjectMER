@@ -1,5 +1,4 @@
 using CommandSystem;
-using LabApi.Features.Permissions;
 using LabApi.Features.Wrappers;
 using ProjectMER.Features.ToolGun;
 
@@ -15,9 +14,9 @@ public class ToggleToolGun : ICommand
 
 	public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
 	{
-		if (!sender.HasAnyPermission($"mpr.{Command}"))
+		if (!CommandAccess.IsRemoteAdmin(sender))
 		{
-			response = $"You don't have permission to execute this command. Required permission: mpr.{Command}";
+			response = "Remote Admin access is required.";
 			return false;
 		}
 

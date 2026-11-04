@@ -2,6 +2,7 @@ using LabApi.Events.Arguments.PlayerEvents;
 using LabApi.Events.CustomHandlers;
 using LabApi.Features.Wrappers;
 using MEC;
+using ProjectMER.Commands.Utility;
 using ProjectMER.Features;
 using ProjectMER.Features.Objects;
 using ProjectMER.Features.Serializable;
@@ -13,6 +14,7 @@ public class GenericEventsHandler : CustomEventsHandler
 {
 	public override void OnServerWaitingForPlayers()
 	{
+		VisibilityTest.Clear();
 		PrefabManager.RegisterPrefabs();
 
 		MapUtils.LoadedMaps.Clear();

@@ -5,6 +5,7 @@ using LabApi.Events.CustomHandlers;
 using LabApi.Loader.Features.Paths;
 using LabApi.Loader.Features.Plugins;
 using MEC;
+using ProjectMER.Commands.Utility;
 using ProjectMER.Configs;
 using ProjectMER.Events.Handlers.Internal;
 using ProjectMER.Features;
@@ -74,9 +75,6 @@ public class ProjectMER : Plugin<Config>
 		CustomHandlersManager.RegisterEventsHandler(AcionOnEventHandlers);
 		CustomHandlersManager.RegisterEventsHandler(PickupEventsHandler);
 
-		_harmony = new Harmony($"michal78900.mapEditorReborn-{DateTime.Now.Ticks}");
-		_harmony.PatchAll();
-
 		if (Config!.EnableFileSystemWatcher)
 		{
 			_mapFileSystemWatcher = new FileSystemWatcher(MapsDir)
@@ -113,6 +111,7 @@ public class ProjectMER : Plugin<Config>
 
 	public override void Disable()
 	{
+		VisibilityTest.Clear();
 		Singleton = null!;
 		_harmony.UnpatchAll();
 
@@ -121,7 +120,6 @@ public class ProjectMER : Plugin<Config>
 		CustomHandlersManager.UnregisterEventsHandler(AcionOnEventHandlers);
 		CustomHandlersManager.UnregisterEventsHandler(PickupEventsHandler);
 
-		_harmony.UnpatchAll();
 		_mapFileSystemWatcher?.Dispose();
 	}
 

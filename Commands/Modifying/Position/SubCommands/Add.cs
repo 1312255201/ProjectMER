@@ -1,5 +1,4 @@
-﻿using CommandSystem;
-using LabApi.Features.Permissions;
+using CommandSystem;
 using LabApi.Features.Wrappers;
 using ProjectMER.Features.Objects;
 using ProjectMER.Features.ToolGun;
@@ -25,9 +24,9 @@ public class Add : ICommand
 	/// <inheritdoc/>
 	public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
 	{
-		if (!sender.HasAnyPermission($"mpr.position"))
+		if (!CommandAccess.IsRemoteAdmin(sender))
 		{
-			response = $"You don't have permission to execute this command. Required permission: mpr.position";
+			response = "Remote Admin access is required.";
 			return false;
 		}
 
